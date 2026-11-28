@@ -32,12 +32,12 @@ export default function InvoiceModal({ order, settings, initialMode = 'invoice',
       <!doctype html>
       <html>
         <head>
-          <title>${mode === 'label' ? 'Shipping Slip' : 'Invoice'} ${order.orderNumber} — ${
-      settings?.shopName || 'Satish Pustak Bhandar'
-    }</title>
+          <title></title>
           <style>
+            @page { margin: 0; size: auto; }
             * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-            body { margin: 20px; color: #1f242d; }
+            body { margin: 0; padding: 12mm; color: #1f242d; background: #fff; }
+            .no-print { display: none !important; }
             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a5f; padding-bottom: 14px; margin-bottom: 18px; }
             .shop-name { font-size: 22px; font-weight: 700; color: #1e3a5f; margin: 0; }
             .muted { color: #555; font-size: 12px; margin: 3px 0; }
@@ -50,17 +50,17 @@ export default function InvoiceModal({ order, settings, initialMode = 'invoice',
             .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
             .grand { border-top: 2px solid #1e3a5f; margin-top: 6px; padding-top: 8px !important; font-weight: 700; font-size: 15px; color: #1e3a5f; }
             .footer { margin-top: 28px; border-top: 1px dashed #ccc; padding-top: 12px; text-align: center; font-size: 11px; color: #666; }
-            /* Shipping Label Print Styles */
-            .parcel-box { max-width: 520px; margin: 0 auto; border: 2.5px dashed #1f242d; padding: 18px; border-radius: 10px; }
+            /* Clean Parcel Shipping Label Print Styles */
+            .parcel-box { max-width: 520px; margin: 0 auto; border: 2px solid #1f242d; padding: 18px; border-radius: 10px; }
             .parcel-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 14px; }
             .parcel-order { font-size: 22px; font-weight: 800; letter-spacing: 1px; color: #111; }
-            .cod-box { background: #111; color: #fff; padding: 10px 14px; border-radius: 8px; text-align: center; font-weight: 800; font-size: 15px; margin-bottom: 14px; letter-spacing: 0.5px; }
+            .cod-box { background: #111; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 10px 14px; border-radius: 8px; text-align: center; font-weight: 800; font-size: 15px; margin-bottom: 14px; letter-spacing: 0.5px; }
             .ship-block { border: 1.5px solid #111; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
             .ship-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: #555; margin-bottom: 4px; }
             .ship-name { font-size: 18px; font-weight: 800; color: #111; }
             .ship-addr { font-size: 13px; line-height: 1.5; margin-top: 4px; }
             .ship-phone { font-size: 14px; font-weight: 700; margin-top: 6px; }
-            .note-box { background: #fff7ed; border: 1.5px solid #d96b27; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #9a3412; margin-bottom: 12px; }
+            .note-box { background: #fff7ed; -webkit-print-color-adjust: exact; print-color-adjust: exact; border: 1.5px solid #d96b27; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #9a3412; margin-bottom: 12px; }
             .pack-list { font-size: 12px; border-top: 1.5px solid #111; padding-top: 10px; margin-top: 10px; }
             .pack-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dotted #ccc; }
             .from-block { font-size: 11px; color: #444; margin-top: 12px; border-top: 1px solid #ddd; padding-top: 8px; }
@@ -128,7 +128,7 @@ export default function InvoiceModal({ order, settings, initialMode = 'invoice',
           {mode === 'label' ? (
             /* PARCEL / SHIPPING SLIP TO PASTE OVER ITEMS */
             <div className="parcel-box mx-auto max-w-lg rounded-xl border-2 border-dashed border-[#1F242D] bg-white p-5">
-              <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
+              <div className="no-print mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-[#6B7280]">
                 <span className="inline-flex items-center gap-1">
                   <Scissors className="h-3 w-3" /> Cut &amp; Paste on Parcel / Gift Box
                 </span>
