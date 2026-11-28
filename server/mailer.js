@@ -111,6 +111,9 @@ export async function sendOrderConfirmationEmail(order, settings) {
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
+        connectionTimeout: 4000,
+        greetingTimeout: 4000,
+        socketTimeout: 5000,
         auth: { user: smtpUser, pass: smtpPass },
       });
 
@@ -200,6 +203,9 @@ export async function sendPromoEmail({ recipients, subject, message, couponCode,
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
+        connectionTimeout: 4000,
+        greetingTimeout: 4000,
+        socketTimeout: 5000,
         auth: { user: smtpUser, pass: smtpPass },
       });
       await transporter.sendMail({
@@ -280,6 +286,9 @@ export async function sendActivityEmail({ to, customerName, title, badge = 'Acco
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
+        connectionTimeout: 4000,
+        greetingTimeout: 4000,
+        socketTimeout: 5000,
         auth: { user: smtpUser, pass: smtpPass },
       });
       await transporter.sendMail({
