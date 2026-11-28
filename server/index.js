@@ -469,9 +469,13 @@ app.post('/api/orders', async (req, res) => {
   };
 
   db.orders.unshift(order);
-  await saveDB(db);
 
-  const emailStatus = await sendOrderConfirmationEmail(order, db.settings);
+  // Run permanent DB save and confirmation email in parallel for fastest checkout response
+  const [, emailStatus] = await Promise.all([
+    saveDB(db),
+    sendOrderConfirmationEmail(order, db.settings),
+  ]);
+
   res.status(201).json({
     order,
     emailStatus,
