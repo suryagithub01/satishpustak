@@ -294,6 +294,9 @@ export function createSeedData() {
     ],
     booklistQuotes: [],
     users: [],
+    suppliers: [],
+    purchaseOrders: [],
+    nextPoSeq: 1001,
   };
 }
 
@@ -306,6 +309,9 @@ function normalizeDB(data) {
   if (!Array.isArray(data.coupons)) data.coupons = [];
   if (!Array.isArray(data.booklistQuotes)) data.booklistQuotes = [];
   if (!Array.isArray(data.users)) data.users = [];
+  if (!Array.isArray(data.suppliers)) data.suppliers = [];
+  if (!Array.isArray(data.purchaseOrders)) data.purchaseOrders = [];
+  if (!data.nextPoSeq) data.nextPoSeq = 1001;
   return data;
 }
 

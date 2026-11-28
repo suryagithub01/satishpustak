@@ -87,6 +87,35 @@ export function buildWhatsAppCustomerUpdateUrl(order, shopName = 'Satish Pustak 
   return buildWhatsAppChatUrl(order.phone, msg);
 }
 
+export function buildWhatsAppSupplierPoUrl(po, settings = {}) {
+  const shopName = settings.shopName || 'Satish Pustak Bhandar';
+  const lines = (po.items || []).map(
+    (it, idx) =>
+      `${idx + 1}. ${it.name}${it.sku ? ` (${it.sku})` : ''} — Qty: *${it.quantity}*${
+        it.unitCost > 0 ? ` @ ${formatINR(it.unitCost)}` : ''
+      }`
+  );
+  const msg = [
+    `*PURCHASE ORDER — ${po.poNumber}*`,
+    `From: *${shopName}*`,
+    settings.address ? `Address: ${settings.address}` : null,
+    settings.gstNumber ? `GSTIN: ${settings.gstNumber}` : null,
+    settings.phone ? `Contact: ${settings.phone}` : null,
+    ``,
+    `Namaste ${po.supplierName}, please supply the following items:`,
+    ``,
+    ...lines,
+    ``,
+    po.estimatedTotal > 0 ? `*Estimated Total:* ${formatINR(po.estimatedTotal)}` : null,
+    po.notes ? `*Notes:* ${po.notes}` : null,
+    ``,
+    `Please confirm stock availability & dispatch timeline. Thank you!`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return buildWhatsAppChatUrl(po.supplierWhatsapp, msg);
+}
+
 export async function apiFetch(url, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData)) {

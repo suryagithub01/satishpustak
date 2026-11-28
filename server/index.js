@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDB, saveDB, savePublicFile, hashPassword, verifyPassword } from './db.js';
-import { sendOrderConfirmationEmail, sendPromoEmail } from './mailer.js';
+import { sendOrderConfirmationEmail, sendPromoEmail, sendActivityEmail } from './mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -110,14 +110,33 @@ function sanitizeUser(u) {
     name: u.name,
     phone: u.phone,
     email: u.email || '',
+    emailVerified: Boolean(u.emailVerified),
     address: u.address || '',
     city: u.city || '',
     pincode: u.pincode || '',
     preferredPayment: u.preferredPayment || 'COD',
     savedUpiId: u.savedUpiId || '',
     wishlist: Array.isArray(u.wishlist) ? u.wishlist : [],
+    activityLog: Array.isArray(u.activityLog) ? u.activityLog.slice(0, 20) : [],
     createdAt: u.createdAt,
   };
+}
+
+function addUserActivity(user, title, detail = '', emailPreviewUrl = '') {
+  if (!user) return;
+  if (!Array.isArray(user.activityLog)) user.activityLog = [];
+  user.activityLog.unshift({
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    title,
+    detail,
+    emailPreviewUrl,
+    at: new Date().toISOString(),
+  });
+  user.activityLog = user.activityLog.slice(0, 25);
+}
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 function normalizePhone(phone) {
@@ -500,6 +519,8 @@ app.post('/api/auth/signup', async (req, res) => {
     name: name.trim(),
     phone: cleanP,
     email: (email || '').trim().toLowerCase(),
+    emailVerified: false,
+    verificationCode: generateOtp(),
     passwordHash: hashPassword(String(password).trim()),
     address: '',
     city: '',
@@ -507,12 +528,36 @@ app.post('/api/auth/signup', async (req, res) => {
     preferredPayment: 'COD',
     savedUpiId: '',
     wishlist: [],
+    activityLog: [],
     createdAt: new Date().toISOString(),
   };
+
+  let verificationEmail = null;
+  if (user.email) {
+    verificationEmail = await sendActivityEmail({
+      to: user.email,
+      customerName: user.name,
+      badge: 'Email Verification',
+      title: 'Verify Your Email Address',
+      highlightCode: user.verificationCode,
+      details: [
+        `Enter this 6-digit code in My Account to verify <strong>${user.email}</strong>.`,
+        `Phone registered: ${user.phone}`,
+      ],
+      settings: db.settings,
+    });
+  }
+  addUserActivity(
+    user,
+    'Account Created',
+    `Signed up with ${user.phone}${user.email ? ` & ${user.email}` : ''}`,
+    verificationEmail?.previewUrl || ''
+  );
+
   db.users = [user, ...(db.users || [])];
   await saveDB(db);
   const token = signToken(user.phone, db.admin.secret, 'customer', user.id);
-  res.status(201).json({ token, user: sanitizeUser(user) });
+  res.status(201).json({ token, user: sanitizeUser(user), verificationEmail });
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -528,8 +573,66 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user || !verifyPassword(String(password || '').trim(), user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid phone/email or password.' });
   }
+  let loginEmail = null;
+  if (user.email) {
+    loginEmail = await sendActivityEmail({
+      to: user.email,
+      customerName: user.name,
+      badge: 'Security & Login Alert',
+      title: 'New Sign-In to Your Account',
+      details: [
+        `Account: <strong>${user.name}</strong> (${user.phone})`,
+        `Signed in at ${new Date().toLocaleString('en-IN')}`,
+      ],
+      settings: db.settings,
+    });
+  }
+  addUserActivity(user, 'Signed In', 'Successful account login', loginEmail?.previewUrl || '');
+  await saveDB(db);
   const token = signToken(user.phone, db.admin.secret, 'customer', user.id);
-  res.json({ token, user: sanitizeUser(user) });
+  res.json({ token, user: sanitizeUser(user), loginEmail });
+});
+
+app.post('/api/auth/verify-email', requireCustomer, async (req, res) => {
+  const { code } = req.body || {};
+  const user = req.customer;
+  if (!code || String(code).trim() !== String(user.verificationCode || '')) {
+    return res.status(400).json({ error: 'Invalid verification code. Please check your email.' });
+  }
+  user.emailVerified = true;
+  user.verificationCode = '';
+  const emailRes = await sendActivityEmail({
+    to: user.email,
+    customerName: user.name,
+    badge: 'Verified Account',
+    title: 'Your Email Is Now Verified!',
+    details: [`Email <strong>${user.email}</strong> has been verified successfully.`],
+    settings: req.db.settings,
+  });
+  addUserActivity(user, 'Email Verified', `${user.email} verified`, emailRes?.previewUrl || '');
+  await saveDB(req.db);
+  res.json({ user: sanitizeUser(user), emailRes });
+});
+
+app.post('/api/auth/resend-verification', requireCustomer, async (req, res) => {
+  const user = req.customer;
+  if (!user.email) {
+    return res.status(400).json({ error: 'Please add an email address in your profile first.' });
+  }
+  user.verificationCode = generateOtp();
+  user.emailVerified = false;
+  const emailRes = await sendActivityEmail({
+    to: user.email,
+    customerName: user.name,
+    badge: 'Email Verification',
+    title: 'Your New Verification Code',
+    highlightCode: user.verificationCode,
+    details: [`Use this 6-digit code to verify <strong>${user.email}</strong>.`],
+    settings: req.db.settings,
+  });
+  addUserActivity(user, 'Verification Code Sent', `Sent to ${user.email}`, emailRes?.previewUrl || '');
+  await saveDB(req.db);
+  res.json({ user: sanitizeUser(user), emailRes });
 });
 
 app.get('/api/auth/me', requireCustomer, (req, res) => {
@@ -550,8 +653,28 @@ app.put('/api/auth/profile', requireCustomer, async (req, res) => {
   if (newPassword && String(newPassword).trim().length >= 4) {
     user.passwordHash = hashPassword(String(newPassword).trim());
   }
+  let activityEmail = null;
+  if (user.email) {
+    activityEmail = await sendActivityEmail({
+      to: user.email,
+      customerName: user.name,
+      badge: 'Profile Update',
+      title: newPassword ? 'Your Profile & Password Were Updated' : 'Your Account Profile Was Updated',
+      details: [
+        `Name: ${user.name}`,
+        user.address ? `Saved Address: ${user.address}${user.city ? `, ${user.city}` : ''}` : null,
+      ],
+      settings: req.db.settings,
+    });
+  }
+  addUserActivity(
+    user,
+    newPassword ? 'Profile & Password Updated' : 'Profile Updated',
+    'Saved account details updated',
+    activityEmail?.previewUrl || ''
+  );
   await saveDB(req.db);
-  res.json({ user: sanitizeUser(user) });
+  res.json({ user: sanitizeUser(user), activityEmail });
 });
 
 app.post('/api/auth/wishlist/:productId', requireCustomer, async (req, res) => {
@@ -604,6 +727,8 @@ app.get('/api/admin/bootstrap', requireAdmin, (req, res) => {
     coupons: db.coupons || [],
     quotes: db.booklistQuotes || [],
     customers: buildCustomersList(db),
+    suppliers: db.suppliers || [],
+    purchaseOrders: db.purchaseOrders || [],
   });
 });
 
@@ -787,6 +912,34 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req, res) => {
 
   order.status = status;
   order.updatedAt = new Date().toISOString();
+
+  // Notify customer by email & record activity when order status changes
+  if (order.customerEmail) {
+    const emailRes = await sendActivityEmail({
+      to: order.customerEmail,
+      customerName: order.customerName,
+      badge: 'Order Status Update',
+      title: `Order ${order.orderNumber} is now ${status}`,
+      details: [
+        `Order ID: <strong>${order.orderNumber}</strong>`,
+        `Current Status: <strong>${status}</strong>`,
+        `Order Total: ₹${Number(order.total || 0).toLocaleString('en-IN')} (${order.paymentMethod})`,
+      ],
+      settings: db.settings,
+    });
+    const matchedUser = (db.users || []).find(
+      (u) => u.id === order.userId || normalizePhone(u.phone) === normalizePhone(order.phone)
+    );
+    if (matchedUser) {
+      addUserActivity(
+        matchedUser,
+        `Order ${order.orderNumber} → ${status}`,
+        `Order status updated to ${status}`,
+        emailRes?.previewUrl || ''
+      );
+    }
+  }
+
   await saveDB(db);
   res.json({ order });
 });
@@ -897,6 +1050,121 @@ app.post('/api/admin/customers/send-email', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: result.error, previewUrl: result.previewUrl });
   }
   res.json(result);
+});
+
+// ==========================================
+// ADMIN SUPPLIERS & PURCHASE ORDERS (PO)
+// ==========================================
+
+app.get('/api/admin/suppliers', requireAdmin, (req, res) => {
+  res.json({ suppliers: req.db.suppliers || [] });
+});
+
+app.post('/api/admin/suppliers', requireAdmin, async (req, res) => {
+  const { name, company, whatsapp, email, city, notes } = req.body || {};
+  if (!name?.trim() || !whatsapp?.trim()) {
+    return res.status(400).json({ error: 'Supplier name and WhatsApp number are required.' });
+  }
+  const db = req.db;
+  const supplier = {
+    id: `sup-${Date.now()}`,
+    name: name.trim(),
+    company: (company || '').trim(),
+    whatsapp: whatsapp.trim(),
+    email: (email || '').trim(),
+    city: (city || '').trim(),
+    notes: (notes || '').trim(),
+    createdAt: new Date().toISOString(),
+  };
+  db.suppliers = [supplier, ...(db.suppliers || [])];
+  await saveDB(db);
+  res.status(201).json({ supplier });
+});
+
+app.delete('/api/admin/suppliers/:id', requireAdmin, async (req, res) => {
+  const db = req.db;
+  db.suppliers = (db.suppliers || []).filter((s) => s.id !== req.params.id);
+  await saveDB(db);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/purchase-orders', requireAdmin, (req, res) => {
+  res.json({ purchaseOrders: req.db.purchaseOrders || [] });
+});
+
+app.post('/api/admin/purchase-orders', requireAdmin, async (req, res) => {
+  const { supplierId, supplierName, supplierWhatsapp, notes, items } = req.body || {};
+  if (!supplierName?.trim() || !supplierWhatsapp?.trim()) {
+    return res.status(400).json({ error: 'Supplier name and WhatsApp number are required.' });
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Add at least one item to the Purchase Order.' });
+  }
+  const db = req.db;
+  const seq = db.nextPoSeq || 1001;
+  db.nextPoSeq = seq + 1;
+
+  const cleanItems = items
+    .filter((it) => it.name?.trim() && Number(it.quantity) > 0)
+    .map((it) => ({
+      productId: it.productId || '',
+      sku: it.sku || '',
+      name: it.name.trim(),
+      quantity: Math.max(1, parseInt(it.quantity, 10) || 1),
+      unitCost: Math.max(0, Number(it.unitCost) || 0),
+    }));
+
+  const estimatedTotal = cleanItems.reduce((s, it) => s + it.quantity * it.unitCost, 0);
+
+  const po = {
+    id: `po-${seq}`,
+    poNumber: `PO-${seq}`,
+    supplierId: supplierId || '',
+    supplierName: supplierName.trim(),
+    supplierWhatsapp: supplierWhatsapp.trim(),
+    notes: (notes || '').trim(),
+    items: cleanItems,
+    estimatedTotal,
+    status: 'Sent',
+    stockAdded: false,
+    createdAt: new Date().toISOString(),
+  };
+
+  db.purchaseOrders = [po, ...(db.purchaseOrders || [])];
+  await saveDB(db);
+  res.status(201).json({ purchaseOrder: po });
+});
+
+app.patch('/api/admin/purchase-orders/:id/status', requireAdmin, async (req, res) => {
+  const { status } = req.body || {};
+  const allowed = ['Draft', 'Sent', 'Received', 'Cancelled'];
+  if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid PO status.' });
+  const db = req.db;
+  const po = (db.purchaseOrders || []).find((p) => p.id === req.params.id);
+  if (!po) return res.status(404).json({ error: 'Purchase Order not found.' });
+
+  // Automatically restock inventory when PO is marked Received for the first time!
+  if (status === 'Received' && !po.stockAdded) {
+    for (const it of po.items || []) {
+      if (it.productId) {
+        const prod = db.products.find((p) => p.id === it.productId);
+        if (prod) prod.stock = (prod.stock || 0) + (it.quantity || 0);
+      }
+    }
+    po.stockAdded = true;
+  }
+
+  po.status = status;
+  po.updatedAt = new Date().toISOString();
+  await saveDB(db);
+  res.json({ purchaseOrder: po });
+});
+
+app.delete('/api/admin/purchase-orders/:id', requireAdmin, async (req, res) => {
+  const db = req.db;
+  db.purchaseOrders = (db.purchaseOrders || []).filter((p) => p.id !== req.params.id);
+  await saveDB(db);
+  res.json({ ok: true });
 });
 
 // ==========================================

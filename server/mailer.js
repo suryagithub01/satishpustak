@@ -221,3 +221,77 @@ export async function sendPromoEmail({ recipients, subject, message, couponCode,
 
   return { sentCount: cleanRecipients.length, mode: 'preview', previewUrl: localPreviewUrl };
 }
+
+export async function sendActivityEmail({ to, customerName, title, badge = 'Account Activity', details = [], highlightCode = '', settings }) {
+  const cleanTo = String(to || '').trim().toLowerCase();
+  if (!cleanTo || !cleanTo.includes('@')) {
+    return { sent: false, mode: 'skipped' };
+  }
+  const shopName = settings?.shopName || 'Satish Pustak Bhandar';
+  const timeStr = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  const detailRows = (details || [])
+    .filter(Boolean)
+    .map((d) => `<li style="margin:6px 0;color:#374151;font-size:14px;">${d}</li>`)
+    .join('');
+
+  const html = `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>${title} — ${shopName}</title></head>
+<body style="margin:0;padding:24px;background:#faf7f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1f242d;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border:1px solid #eae2d6;border-radius:16px;overflow:hidden;">
+    <div style="background:#1e3a5f;padding:22px 26px;color:#ffffff;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#fde6c4;font-weight:700;">${badge}</div>
+      <h1 style="margin:6px 0 0;font-size:22px;font-family:Georgia,serif;">${shopName}</h1>
+    </div>
+    <div style="padding:24px 26px;">
+      <p style="margin:0 0 12px;font-size:15px;">Namaste <strong>${customerName || 'Customer'}</strong>,</p>
+      <h2 style="margin:0 0 12px;font-size:18px;color:#1e3a5f;">${title}</h2>
+      ${
+        highlightCode
+          ? `<div style="background:#faf7f2;border:2px dashed #d96b27;border-radius:12px;padding:14px;text-align:center;margin:16px 0;">
+              <div style="font-size:11px;color:#6b7280;text-transform:uppercase;font-weight:700;">Your Verification Code</div>
+              <div style="font-size:28px;font-weight:800;color:#1e3a5f;letter-spacing:6px;margin-top:4px;">${highlightCode}</div>
+            </div>`
+          : ''
+      }
+      ${detailRows ? `<ul style="padding-left:18px;margin:12px 0;">${detailRows}</ul>` : ''}
+      <p style="margin:14px 0 0;font-size:12px;color:#6b7280;">Timestamp: ${timeStr}</p>
+      <div style="margin-top:20px;padding-top:14px;border-top:1px dashed #d4c8b8;font-size:12px;color:#6b7280;">
+        If you did not perform this action, please contact ${shopName} on WhatsApp at <strong>${settings?.phone || ''}</strong>.
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const fileName = `activity-${Date.now()}.html`;
+  const previewUrl = await savePublicFile('emails', fileName, Buffer.from(html, 'utf8'), 'text/html');
+
+  const smtpHost = (settings?.smtpHost || process.env.SMTP_HOST || '').trim();
+  const smtpUser = (settings?.smtpUser || process.env.SMTP_USER || '').trim();
+  const smtpPass = (settings?.smtpPass || process.env.SMTP_PASS || '').trim();
+  const smtpPort = Number(settings?.smtpPort || process.env.SMTP_PORT || 587);
+  const fromEmail =
+    (settings?.smtpFrom || process.env.SMTP_FROM || smtpUser || settings?.email || 'orders@satishpustakbhandar.in').trim();
+
+  if (smtpHost && smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+      await transporter.sendMail({
+        from: `"${shopName}" <${fromEmail}>`,
+        to: cleanTo,
+        subject: `${title} — ${shopName}`,
+        html,
+      });
+      return { sent: true, mode: 'smtp', to: cleanTo, previewUrl };
+    } catch (err) {
+      return { sent: false, mode: 'preview', to: cleanTo, previewUrl, error: err.message };
+    }
+  }
+  return { sent: true, mode: 'preview', to: cleanTo, previewUrl };
+}

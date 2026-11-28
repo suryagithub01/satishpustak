@@ -31,9 +31,11 @@ import {
   Download,
   Send,
   ExternalLink,
+  Truck,
 } from 'lucide-react';
 import { apiFetch, formatINR, buildWhatsAppCustomerUpdateUrl, buildWhatsAppChatUrl } from '../utils/api';
 import InvoiceModal from './InvoiceModal';
+import SupplierPoTab from './SupplierPoTab';
 
 const ORDER_STATUSES = ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Delivered', 'Cancelled'];
 
@@ -73,6 +75,8 @@ export default function AdminPanel({ onBackToStore, onStoreMutated }) {
   const [promoResult, setPromoResult] = useState(null);
   const [coupons, setCoupons] = useState([]);
   const [quotes, setQuotes] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [settings, setSettings] = useState(null);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
   const [invoiceMode, setInvoiceMode] = useState('invoice'); // 'invoice' | 'label'
@@ -113,6 +117,8 @@ export default function AdminPanel({ onBackToStore, onStoreMutated }) {
       setCoupons(data.coupons || []);
       setQuotes(data.quotes || []);
       setCustomers(data.customers || []);
+      setSuppliers(data.suppliers || []);
+      setPurchaseOrders(data.purchaseOrders || []);
     } catch (err) {
       if (String(err.message).toLowerCase().includes('unauthorized')) {
         localStorage.removeItem('spb_admin_token');
@@ -136,6 +142,8 @@ export default function AdminPanel({ onBackToStore, onStoreMutated }) {
           setCoupons(data.coupons || []);
           setQuotes(data.quotes || []);
           setCustomers(data.customers || []);
+          setSuppliers(data.suppliers || []);
+          setPurchaseOrders(data.purchaseOrders || []);
         })
         .catch(() => {});
     }, 20000);
@@ -514,6 +522,7 @@ export default function AdminPanel({ onBackToStore, onStoreMutated }) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'products', label: `Products (${products.length})`, icon: Package },
     { id: 'orders', label: `Orders (${orders.length})`, icon: ShoppingCart },
+    { id: 'suppliers', label: `Suppliers & PO (${purchaseOrders.length})`, icon: Truck },
     { id: 'customers', label: `Customers (${customers.length})`, icon: Users },
     { id: 'quotes', label: `Booklist Quotes (${quotes.length})`, icon: ClipboardList },
     { id: 'coupons', label: `Coupons (${coupons.length})`, icon: TicketPercent },
@@ -1081,6 +1090,21 @@ export default function AdminPanel({ onBackToStore, onStoreMutated }) {
               )}
             </div>
           </div>
+        )}
+
+        {/* SUPPLIERS & WHATSAPP PO TAB */}
+        {tab === 'suppliers' && (
+          <SupplierPoTab
+            suppliers={suppliers}
+            purchaseOrders={purchaseOrders}
+            products={products}
+            settings={settings}
+            onMutated={() => {
+              loadAllAdminData();
+              onStoreMutated();
+            }}
+            showToast={showToast}
+          />
         )}
 
         {/* CUSTOMERS & UPSELL CRM TAB */}

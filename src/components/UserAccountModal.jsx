@@ -13,6 +13,9 @@ import {
   MapPin,
   CreditCard,
   IndianRupee,
+  ShieldCheck,
+  Bell,
+  ExternalLink,
 } from 'lucide-react';
 import { apiFetch, formatINR, buildWhatsAppChatUrl } from '../utils/api';
 
@@ -52,6 +55,10 @@ export default function UserAccountModal({
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [verifyMsg, setVerifyMsg] = useState('');
+  const [verifyPreviewUrl, setVerifyPreviewUrl] = useState('');
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !user) return;
@@ -93,6 +100,37 @@ export default function UserAccountModal({
       alert(err.message);
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleVerifyEmail = async (e) => {
+    e.preventDefault();
+    setVerifyMsg('');
+    setVerifying(true);
+    try {
+      const data = await apiFetch('/api/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ code: otpInput.trim() }),
+      });
+      onUserUpdated(data.user);
+      setOtpInput('');
+      setVerifyMsg('Email verified successfully!');
+    } catch (err) {
+      setVerifyMsg(err.message);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setVerifyMsg('');
+    try {
+      const data = await apiFetch('/api/auth/resend-verification', { method: 'POST' });
+      onUserUpdated(data.user);
+      setVerifyPreviewUrl(data.emailRes?.previewUrl || '');
+      setVerifyMsg(`Verification code sent to ${user.email}`);
+    } catch (err) {
+      setVerifyMsg(err.message);
     }
   };
 
@@ -153,6 +191,7 @@ export default function UserAccountModal({
           {[
             { id: 'orders', label: `My Orders (${orders.length})`, icon: Package },
             { id: 'payments', label: 'Payment Details', icon: CreditCard },
+            { id: 'activity', label: 'Activity & Emails', icon: Bell },
             { id: 'wishlist', label: `Wishlist (${wishlistProducts.length})`, icon: Heart },
             { id: 'profile', label: 'My Profile', icon: User },
           ].map((t) => {
@@ -410,6 +449,127 @@ export default function UserAccountModal({
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ACTIVITY & EMAIL VERIFICATION TAB */}
+          {tab === 'activity' && (
+            <div className="space-y-4">
+              {/* Email Verification Status Card */}
+              <div className="rounded-2xl border border-[#EAE2D6] bg-white p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck
+                      className={`h-5 w-5 ${
+                        user.emailVerified ? 'text-emerald-600' : 'text-amber-600'
+                      }`}
+                    />
+                    <div>
+                      <div className="text-sm font-bold text-[#1E3A5F]">
+                        Email Verification {user.email ? `(${user.email})` : ''}
+                      </div>
+                      <div className="text-xs text-[#6B7280]">
+                        {user.emailVerified
+                          ? 'Verified — you receive security, login, and order activity emails.'
+                          : 'Verify your email with the 6-digit code sent to your inbox.'}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-bold ${
+                      user.emailVerified
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {user.emailVerified ? 'Verified ✓' : 'Pending'}
+                  </span>
+                </div>
+
+                {!user.emailVerified && user.email && (
+                  <form onSubmit={handleVerifyEmail} className="mt-3 flex flex-wrap gap-2">
+                    <input
+                      required
+                      type="text"
+                      maxLength={6}
+                      value={otpInput}
+                      onChange={(e) => setOtpInput(e.target.value)}
+                      placeholder="Enter 6-digit code"
+                      className="w-40 rounded-xl border border-[#E2D9CB] px-3 py-2 text-xs font-bold tracking-widest"
+                    />
+                    <button
+                      type="submit"
+                      disabled={verifying}
+                      className="rounded-full bg-[#1E3A5F] px-4 py-2 text-xs font-semibold text-white hover:bg-[#162C49]"
+                    >
+                      {verifying ? 'Verifying...' : 'Verify Email'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      className="rounded-full border border-[#E2D9CB] px-3.5 py-2 text-xs font-semibold text-[#1E3A5F] hover:bg-[#FAF7F2]"
+                    >
+                      Send / Resend Code
+                    </button>
+                  </form>
+                )}
+
+                {verifyMsg && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#1E3A5F]">
+                    <span>{verifyMsg}</span>
+                    {verifyPreviewUrl && (
+                      <a
+                        href={verifyPreviewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[#D96B27] underline"
+                      >
+                        View Verification Email <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Activity Timeline */}
+              <div className="rounded-2xl border border-[#EAE2D6] bg-white p-4 sm:p-5">
+                <h3 className="font-display text-base font-bold text-[#1E3A5F]">
+                  Account Activity &amp; Sent Emails
+                </h3>
+                {(user.activityLog || []).length === 0 ? (
+                  <p className="mt-3 text-xs text-[#6B7280]">No activity recorded yet.</p>
+                ) : (
+                  <div className="mt-3 divide-y divide-[#F3EDE3]">
+                    {(user.activityLog || []).map((act) => (
+                      <div
+                        key={act.id}
+                        className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs"
+                      >
+                        <div>
+                          <div className="font-bold text-[#1E3A5F]">{act.title}</div>
+                          <div className="text-[#6B7280]">
+                            {act.detail} •{' '}
+                            {new Date(act.at).toLocaleString('en-IN', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })}
+                          </div>
+                        </div>
+                        {act.emailPreviewUrl && (
+                          <a
+                            href={act.emailPreviewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full bg-[#FAF7F2] border border-[#E2D9CB] px-2.5 py-1 text-[11px] font-semibold text-[#1E3A5F] hover:bg-[#1E3A5F] hover:text-white"
+                          >
+                            View Email <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
