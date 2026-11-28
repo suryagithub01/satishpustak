@@ -326,16 +326,25 @@ async function streamToText(stream) {
   return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
 }
 
+let memCache = null;
+let memCacheAt = 0;
+const MEM_TTL_MS = 5000;
+
 export async function loadDB() {
+  if (memCache && Date.now() - memCacheAt < MEM_TTL_MS) {
+    return memCache;
+  }
   if (isBlobEnabled()) {
     try {
       const res = await get(BLOB_DB_PATH, { access: 'public', useCache: false });
       if (res && res.statusCode === 200 && res.stream) {
         const raw = await streamToText(res.stream);
-        return normalizeDB(JSON.parse(raw));
+        const parsed = normalizeDB(JSON.parse(raw));
+        memCache = parsed;
+        memCacheAt = Date.now();
+        return parsed;
       }
     } catch (err) {
-      // Blob not found yet — will initialize cleanly below
       if (!String(err?.message || '').toLowerCase().includes('not found')) {
         console.error('Blob read warning:', err?.message || err);
       }
@@ -352,11 +361,16 @@ export async function loadDB() {
     return seed;
   }
   const raw = fs.readFileSync(DB_FILE, 'utf8');
-  return normalizeDB(JSON.parse(raw));
+  const parsed = normalizeDB(JSON.parse(raw));
+  memCache = parsed;
+  memCacheAt = Date.now();
+  return parsed;
 }
 
 export async function saveDB(data) {
   const normalized = normalizeDB(data);
+  memCache = normalized;
+  memCacheAt = Date.now();
   if (isBlobEnabled()) {
     await put(BLOB_DB_PATH, JSON.stringify(normalized), {
       access: 'public',

@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import Navbar from './components/Navbar';
 import Storefront from './components/Storefront';
-import ProductModal from './components/ProductModal';
-import CartDrawer from './components/CartDrawer';
-import CheckoutModal from './components/CheckoutModal';
-import OrderTrackerModal from './components/OrderTrackerModal';
-import BooklistQuoteModal from './components/BooklistQuoteModal';
-import AuthModal from './components/AuthModal';
-import UserAccountModal from './components/UserAccountModal';
-import AdminPanel from './components/AdminPanel';
 import { apiFetch } from './utils/api';
+
+const ProductModal = lazy(() => import('./components/ProductModal'));
+const CartDrawer = lazy(() => import('./components/CartDrawer'));
+const CheckoutModal = lazy(() => import('./components/CheckoutModal'));
+const OrderTrackerModal = lazy(() => import('./components/OrderTrackerModal'));
+const BooklistQuoteModal = lazy(() => import('./components/BooklistQuoteModal'));
+const AuthModal = lazy(() => import('./components/AuthModal'));
+const UserAccountModal = lazy(() => import('./components/UserAccountModal'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
 
 function isAdminPath() {
   return (
@@ -20,16 +21,29 @@ function isAdminPath() {
   );
 }
 
+function readStoreCache() {
+  try {
+    return JSON.parse(localStorage.getItem('spb_store_cache') || 'null');
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
+  const initialCache = readStoreCache();
+
   const [view, setView] = useState(() => (isAdminPath() ? 'admin' : 'store'));
-  const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState({
-    shopName: 'Satish Pustak Bhandar',
-    tagline: 'Books, Fine Stationery & Thoughtful Gifts',
-    whatsappNumber: '919876543210',
-  });
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(() => !initialCache);
+  const [settings, setSettings] = useState(
+    () =>
+      initialCache?.settings || {
+        shopName: 'Satish Pustak Bhandar',
+        tagline: 'Books, Fine Stationery & Thoughtful Gifts',
+        whatsappNumber: '919876543210',
+      }
+  );
+  const [categories, setCategories] = useState(() => initialCache?.categories || []);
+  const [products, setProducts] = useState(() => initialCache?.products || []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -58,6 +72,18 @@ export default function App() {
       setSettings(data.settings || {});
       setCategories(data.categories || []);
       setProducts(data.products || []);
+      try {
+        localStorage.setItem(
+          'spb_store_cache',
+          JSON.stringify({
+            settings: data.settings || {},
+            categories: data.categories || [],
+            products: data.products || [],
+          })
+        );
+      } catch {
+        // ignore storage quota errors
+      }
     } catch (err) {
       console.error('Failed to load store:', err);
     } finally {
@@ -175,7 +201,17 @@ export default function App() {
   };
 
   if (view === 'admin') {
-    return <AdminPanel onBackToStore={backToStore} onStoreMutated={loadStore} />;
+    return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center bg-[#FAF7F2] text-[#1E3A5F]">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        }
+      >
+        <AdminPanel onBackToStore={backToStore} onStoreMutated={loadStore} />
+      </Suspense>
+    );
   }
 
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -219,85 +255,101 @@ export default function App() {
         />
       )}
 
-      <ProductModal
-        product={selectedProduct}
-        categoryName={selectedProduct ? categoryNameMap[selectedProduct.categoryId] : ''}
-        settings={settings}
-        onClose={() => setSelectedProduct(null)}
-        onAddToCart={handleAddToCart}
-      />
+      <Suspense fallback={null}>
+        {selectedProduct && (
+          <ProductModal
+            product={selectedProduct}
+            categoryName={categoryNameMap[selectedProduct.categoryId] || ''}
+            settings={settings}
+            onClose={() => setSelectedProduct(null)}
+            onAddToCart={handleAddToCart}
+          />
+        )}
 
-      <CartDrawer
-        isOpen={cartOpen}
-        onClose={() => setCartOpen(false)}
-        cart={cart}
-        settings={settings}
-        onUpdateQty={handleUpdateQty}
-        onRemove={handleRemoveCart}
-        onCheckout={() => {
-          setCartOpen(false);
-          setCheckoutOpen(true);
-        }}
-      />
+        {cartOpen && (
+          <CartDrawer
+            isOpen={cartOpen}
+            onClose={() => setCartOpen(false)}
+            cart={cart}
+            settings={settings}
+            onUpdateQty={handleUpdateQty}
+            onRemove={handleRemoveCart}
+            onCheckout={() => {
+              setCartOpen(false);
+              setCheckoutOpen(true);
+            }}
+          />
+        )}
 
-      <CheckoutModal
-        isOpen={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        cart={cart}
-        settings={settings}
-        user={user}
-        onOrderPlaced={handleOrderPlaced}
-        onOpenAuth={() => {
-          setCheckoutOpen(false);
-          setPendingCheckout(true);
-          setAuthPrompt('Sign in to auto-fill your saved address & view your orders.');
-          setAuthOpen(true);
-        }}
-        onOpenAccount={() => {
-          setCheckoutOpen(false);
-          setAccountOpen(true);
-        }}
-      />
+        {checkoutOpen && (
+          <CheckoutModal
+            isOpen={checkoutOpen}
+            onClose={() => setCheckoutOpen(false)}
+            cart={cart}
+            settings={settings}
+            user={user}
+            onOrderPlaced={handleOrderPlaced}
+            onOpenAuth={() => {
+              setCheckoutOpen(false);
+              setPendingCheckout(true);
+              setAuthPrompt('Sign in to auto-fill your saved address & view your orders.');
+              setAuthOpen(true);
+            }}
+            onOpenAccount={() => {
+              setCheckoutOpen(false);
+              setAccountOpen(true);
+            }}
+          />
+        )}
 
-      <OrderTrackerModal isOpen={trackerOpen} onClose={() => setTrackerOpen(false)} />
+        {trackerOpen && (
+          <OrderTrackerModal isOpen={trackerOpen} onClose={() => setTrackerOpen(false)} />
+        )}
 
-      <BooklistQuoteModal
-        isOpen={booklistOpen}
-        onClose={() => setBooklistOpen(false)}
-        settings={settings}
-      />
+        {booklistOpen && (
+          <BooklistQuoteModal
+            isOpen={booklistOpen}
+            onClose={() => setBooklistOpen(false)}
+            settings={settings}
+          />
+        )}
 
-      <AuthModal
-        isOpen={authOpen}
-        onClose={() => {
-          setAuthOpen(false);
-          setAuthPrompt('');
-          setPendingCheckout(false);
-        }}
-        settings={settings}
-        promptMessage={authPrompt}
-        onAuthSuccess={(u) => {
-          setUser(u);
-          setAuthPrompt('');
-          showToast(`Welcome, ${u.name}!`);
-          if (pendingCheckout) {
-            setPendingCheckout(false);
-            setCheckoutOpen(true);
-          }
-        }}
-      />
+        {authOpen && (
+          <AuthModal
+            isOpen={authOpen}
+            onClose={() => {
+              setAuthOpen(false);
+              setAuthPrompt('');
+              setPendingCheckout(false);
+            }}
+            settings={settings}
+            promptMessage={authPrompt}
+            onAuthSuccess={(u) => {
+              setUser(u);
+              setAuthPrompt('');
+              showToast(`Welcome, ${u.name}!`);
+              if (pendingCheckout) {
+                setPendingCheckout(false);
+                setCheckoutOpen(true);
+              }
+            }}
+          />
+        )}
 
-      <UserAccountModal
-        isOpen={accountOpen}
-        onClose={() => setAccountOpen(false)}
-        user={user}
-        products={products}
-        settings={settings}
-        onUserUpdated={setUser}
-        onLogout={handleUserLogout}
-        onAddToCart={handleAddToCart}
-        onToggleWishlist={handleToggleWishlist}
-      />
+        {accountOpen && (
+          <UserAccountModal
+            isOpen={accountOpen}
+            onClose={() => setAccountOpen(false)}
+            user={user}
+            products={products}
+            settings={settings}
+            onUserUpdated={setUser}
+            onLogout={handleUserLogout}
+            onAddToCart={handleAddToCart}
+            onToggleWishlist={handleToggleWishlist}
+          />
+        )}
+      </Suspense>
 
       {toast && (
         <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-[#1E3A5F] px-5 py-2.5 text-xs font-semibold text-white shadow-xl">
